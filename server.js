@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
+const webpush = require('web-push');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,7 +24,56 @@ let localCache = {};
 const EXPIRATIONS_FILE = path.join(__dirname, 'expirations.json');
 let expirationsList = [];
 
-// Load cache from disk
+// VAPID keys setup for Web Push Notifications
+const VAPID_FILE = path.join(__dirname, 'vapid_keys.json');
+let vapidKeys = {};
+
+if (fs.existsSync(VAPID_FILE)) {
+  try {
+    vapidKeys = JSON.parse(fs.readFileSync(VAPID_FILE, 'utf8'));
+  } catch (e) {
+    console.error('Failed to parse VAPID file, generating new keys');
+    vapidKeys = webpush.generateVAPIDKeys();
+    fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), 'utf8');
+  }
+} else {
+  vapidKeys = webpush.generateVAPIDKeys();
+  fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), 'utf8');
+}
+
+webpush.setVapidDetails(
+  'mailto:vencimientos-coto@example.com',
+  vapidKeys.publicKey,
+  vapidKeys.privateKey
+);
+
+// Subscriptions storage
+const SUBS_FILE = path.join(__dirname, 'subscriptions.json');
+let subscriptions = [];
+
+function loadSubscriptions() {
+  try {
+    if (fs.existsSync(SUBS_FILE)) {
+      subscriptions = JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
+    } else {
+      subscriptions = [];
+      fs.writeFileSync(SUBS_FILE, JSON.stringify(subscriptions, null, 2), 'utf8');
+    }
+  } catch (err) {
+    console.error('Failed to load subscriptions:', err.message);
+    subscriptions = [];
+  }
+}
+
+function saveSubscriptions() {
+  try {
+    fs.writeFileSync(SUBS_FILE, JSON.stringify(subscriptions, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to save subscriptions:', err.message);
+  }
+}
+
+// Load cache & lists
 function loadCache() {
   try {
     if (fs.existsSync(CACHE_FILE)) {
@@ -37,20 +87,10 @@ function loadCache() {
     }
   } catch (err) {
     console.error('Failed to read/write product cache file:', err.message);
-    localCache = {}; // Fallback in-memory
+    localCache = {};
   }
 }
 
-// Save cache to disk
-function saveCache() {
-  try {
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(localCache, null, 2), 'utf8');
-  } catch (err) {
-    console.error('Failed to save product cache to disk:', err.message);
-  }
-}
-
-// Load expirations list
 function loadExpirations() {
   try {
     if (fs.existsSync(EXPIRATIONS_FILE)) {
@@ -68,7 +108,14 @@ function loadExpirations() {
   }
 }
 
-// Save expirations list
+function saveCache() {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(localCache, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to save product cache to disk:', err.message);
+  }
+}
+
 function saveExpirations() {
   try {
     fs.writeFileSync(EXPIRATIONS_FILE, JSON.stringify(expirationsList, null, 2), 'utf8');
@@ -77,9 +124,10 @@ function saveExpirations() {
   }
 }
 
-// Initial cache & expirations load
+// Run storage loaders
 loadCache();
 loadExpirations();
+loadSubscriptions();
 
 // Helper to fetch Coto Digital session cookies
 async function fetchCotoCookies() {
@@ -264,7 +312,6 @@ app.get('/api/search', async (req, res) => {
     
     if (details) {
       console.log(`ATG fallback SUCCESS for PLU [${cleanedQuery}]:`, details.title);
-      // Store in cache (EAN remains 'No disponible' until manually registered)
       localCache[cleanedQuery] = details;
       saveCache();
       
@@ -360,7 +407,6 @@ app.post('/api/expirations', (req, res) => {
   if (id) {
     const index = expirationsList.findIndex(e => e.id === id);
     if (index !== -1) {
-      // Keep original createdAt if editing
       item.createdAt = expirationsList[index].createdAt;
       expirationsList[index] = item;
     } else {
@@ -389,6 +435,127 @@ app.delete('/api/expirations/:id', (req, res) => {
     res.status(404).json({ success: false, error: 'No se encontró el registro.' });
   }
 });
+
+/**
+ * WEB PUSH ENDPOINTS
+ */
+
+// Get public VAPID key
+app.get('/api/vapid-public-key', (req, res) => {
+  res.json({ publicKey: vapidKeys.publicKey });
+});
+
+// Subscribe to push notifications
+app.post('/api/subscribe', (req, res) => {
+  const subscription = req.body;
+  if (!subscription || !subscription.endpoint) {
+    return res.status(400).json({ success: false, error: 'Objeto de suscripción inválido.' });
+  }
+
+  const exists = subscriptions.some(s => s.endpoint === subscription.endpoint);
+  if (!exists) {
+    subscriptions.push(subscription);
+    saveSubscriptions();
+    console.log(`New client subscribed. Total subscriptions: ${subscriptions.length}`);
+  }
+  res.status(201).json({ success: true });
+});
+
+// Unsubscribe
+app.post('/api/unsubscribe', (req, res) => {
+  const subscription = req.body;
+  if (!subscription || !subscription.endpoint) {
+    return res.status(400).json({ success: false, error: 'Suscripción inválida.' });
+  }
+
+  subscriptions = subscriptions.filter(s => s.endpoint !== subscription.endpoint);
+  saveSubscriptions();
+  console.log(`Client unsubscribed. Total subscriptions: ${subscriptions.length}`);
+  res.json({ success: true });
+});
+
+// Test Push Notifications Endpoint (triggers a push in 10 seconds)
+app.post('/api/test-push', (req, res) => {
+  const delay = 10000;
+  console.log(`Scheduling a test push to ${subscriptions.length} subscribers in ${delay / 1000}s...`);
+
+  setTimeout(async () => {
+    const payload = JSON.stringify({
+      title: '🧪 Notificación de Prueba',
+      body: '¡Funciona! Esta alerta se generó en segundo plano con la app cerrada.',
+      url: '/'
+    });
+
+    const sendPromises = subscriptions.map(sub => {
+      return webpush.sendNotification(sub, payload)
+        .catch(err => {
+          console.error('Failed to send push notification to subscription:', sub.endpoint.substring(0, 40) + '...', err.message);
+          // If subscription has expired or is invalid, remove it
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            subscriptions = subscriptions.filter(s => s.endpoint !== sub.endpoint);
+            saveSubscriptions();
+          }
+        });
+    });
+
+    await Promise.all(sendPromises);
+    console.log('Test push notifications processing finished.');
+  }, delay);
+
+  res.json({ success: true, message: 'Notificación de prueba programada para dentro de 10 segundos. Ya puedes cerrar la app.' });
+});
+
+// Core Expiration checker function (sends push alerts for products expiring today)
+async function checkAndSendPushNotifications() {
+  console.log('Running daily expirations checker...');
+  if (subscriptions.length === 0) {
+    console.log('No active push subscriptions.');
+    return;
+  }
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const expiringToday = expirationsList.filter(item => {
+    const [year, month, day] = item.expirationDate.split('-').map(Number);
+    const expDate = new Date(year, month - 1, day);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffTime = expDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays === 0;
+  });
+
+  if (expiringToday.length === 0) {
+    console.log('No products expiring today.');
+    return;
+  }
+
+  console.log(`Found ${expiringToday.length} items expiring today. Sending push notifications...`);
+
+  for (const item of expiringToday) {
+    const payload = JSON.stringify({
+      title: '⚠️ Producto por Vencer Hoy',
+      body: `"${item.title}" (PLU: ${item.plu || 'N/D'}) vence hoy. Consumir pronto.`,
+      url: '/'
+    });
+
+    const sendPromises = subscriptions.map(sub => {
+      return webpush.sendNotification(sub, payload)
+        .catch(err => {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            subscriptions = subscriptions.filter(s => s.endpoint !== sub.endpoint);
+            saveSubscriptions();
+          }
+        });
+    });
+
+    await Promise.all(sendPromises);
+  }
+}
+
+// Check every 12 hours
+setInterval(checkAndSendPushNotifications, 12 * 60 * 60 * 1000);
+// Check on startup after 15 seconds
+setTimeout(checkAndSendPushNotifications, 15000);
 
 // Start server
 app.listen(PORT, () => {

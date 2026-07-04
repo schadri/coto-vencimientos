@@ -1,4 +1,4 @@
-const CACHE_NAME = 'coto-vencimientos-v1';
+const CACHE_NAME = 'coto-vencimientos-v2';
 const ASSETS = [
   '/',
   '/index.html',
@@ -33,7 +33,6 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // Direct network for API requests
   if (e.request.url.includes('/api/')) {
     return;
   }
@@ -44,22 +43,49 @@ self.addEventListener('fetch', (e) => {
   );
 });
 
-// Handle notification click to focus or open the app window
+// Push notification listener
+self.addEventListener('push', (event) => {
+  let data = { title: '⚠️ Alerta de Vencimiento', body: 'Producto por vencer hoy.', url: '/' };
+  
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: '/icon.svg',
+    badge: '/icon.svg',
+    vibrate: [200, 100, 200],
+    data: {
+      url: data.url || '/'
+    }
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+// Handle notification click (redirect or focus window)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const urlToOpen = event.notification.data ? event.notification.data.url : '/';
+  
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      if (clientList.length > 0) {
-        let client = clientList[0];
-        for (let i = 0; i < clientList.length; i++) {
-          if (clientList[i].focused) {
-            client = clientList[i];
-            break;
-          }
+      for (let i = 0; i < clientList.length; i++) {
+        const client = clientList[i];
+        if (client.url.endsWith(urlToOpen) && 'focus' in client) {
+          return client.focus();
         }
-        return client.focus();
       }
-      return clients.openWindow('/');
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
     })
   );
 });

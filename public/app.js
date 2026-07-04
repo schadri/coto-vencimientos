@@ -43,19 +43,68 @@ const manualContent = document.getElementById('manual-content');
 const btnNotifications = document.getElementById('btn-notifications');
 const pulseIndicator = btnNotifications.querySelector('.pulse-indicator');
 
-// Register Service Worker
+// Register Service Worker and initialize Push Manager
+let swRegistration = null;
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
-      .then(reg => console.log('Service Worker registrado.', reg.scope))
+      .then(reg => {
+        console.log('Service Worker registrado.', reg.scope);
+        swRegistration = reg;
+        if (Notification.permission === 'granted') {
+          subscribeToPush(reg);
+        }
+      })
       .catch(err => console.error('Fallo registro Service Worker:', err));
   });
+}
+
+// Convert VAPID public key
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/');
+
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+// Register Push Subscription
+async function subscribeToPush(registration) {
+  try {
+    const resKey = await fetch('/api/vapid-public-key');
+    const { publicKey } = await resKey.json();
+    if (!publicKey) return;
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey)
+    });
+
+    await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(subscription)
+    });
+    console.log('Suscripción Web Push registrada con éxito.');
+  } catch (err) {
+    console.error('Error al registrar la suscripción Web Push:', err);
+  }
 }
 
 // Request Notification Permission on Page Load/Action
 async function initNotifications() {
   if (!('Notification' in window)) {
-    console.log('Este navegador no soporta notificaciones de escritorio.');
+    console.log('Este navegador no soporta notificaciones.');
     return;
   }
   
@@ -66,9 +115,30 @@ async function initNotifications() {
     updateNotificationButtonState();
     if (permission === 'granted') {
       new Notification('🔔 Alertas Activas', {
-        body: 'Recibirás notificaciones el día que venzan tus productos al abrir la aplicación.',
+        body: 'Notificaciones activas en segundo plano. Recibirás avisos de vencimientos.',
         icon: '/icon.svg'
       });
+      if (swRegistration) {
+        subscribeToPush(swRegistration);
+      }
+    }
+  });
+
+  // Setup test push event trigger
+  const btnTestPush = document.getElementById('btn-test-push');
+  btnTestPush.addEventListener('click', async () => {
+    if (Notification.permission !== 'granted') {
+      showToast('Primero debes habilitar las notificaciones.', 'error');
+      return;
+    }
+    
+    showToast('Programando notificación. Cierra la app ahora...', 'success');
+    
+    try {
+      await fetch('/api/test-push', { method: 'POST' });
+    } catch (err) {
+      console.error('Error triggering test push:', err);
+      showToast('Error de red al programar', 'error');
     }
   });
 }
