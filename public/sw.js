@@ -1,4 +1,4 @@
-const CACHE_NAME = 'coto-vencimientos-v2';
+const CACHE_NAME = 'coto-vencimientos-v3';
 const ASSETS = [
   '/',
   '/index.html',
