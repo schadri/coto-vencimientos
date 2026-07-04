@@ -150,7 +150,7 @@
           <div class="form-group">
             <label for="form-code">Código PLU o EAN</label>
             <div class="input-action-group">
-              <input type="text" id="form-code" placeholder="Ej: 4011 o 779123456789" required autocomplete="off">
+              <input type="text" id="form-code" placeholder="Ej: 4011 o 779123456789" required autocomplete="off" inputmode="numeric" pattern="[0-9]*">
               <button type="button" class="btn-secondary" id="btn-search-product">
                 <i class="fa-solid fa-magnifying-glass"></i> Buscar
               </button>
@@ -179,11 +179,11 @@
             <div class="collapsible-content hidden" id="manual-content">
               <div class="form-group">
                 <label for="form-plu">PLU (Manual)</label>
-                <input type="text" id="form-plu" placeholder="Código PLU local">
+                <input type="text" id="form-plu" placeholder="Código PLU local" inputmode="numeric" pattern="[0-9]*">
               </div>
               <div class="form-group">
                 <label for="form-ean">EAN (Manual)</label>
-                <input type="text" id="form-ean" placeholder="Código de barra largo">
+                <input type="text" id="form-ean" placeholder="Código de barra largo" inputmode="numeric" pattern="[0-9]*">
               </div>
               <div class="form-group">
                 <label for="form-url">URL de Coto Digital</label>
