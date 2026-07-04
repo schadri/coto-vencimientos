@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vencimientos Coto</title>
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="Gestor inteligente de vencimientos de productos de Coto con alertas y búsqueda por PLU/EAN.">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  
+  <!-- Premium Fonts and Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-main">
+        <div class="logo-area">
+          <div class="logo-icon">
+            <svg viewBox="0 0 512 512" width="40" height="40">
+              <rect width="512" height="512" rx="128" fill="url(#headerGrad)" />
+              <rect x="146" y="156" width="220" height="220" rx="36" fill="#1e293b" stroke="#ffffff" stroke-width="14" />
+              <path d="M 146 220 L 366 220" stroke="#ffffff" stroke-width="14" />
+              <rect x="190" y="110" width="20" height="70" rx="10" fill="#ff4655" />
+              <rect x="302" y="110" width="20" height="70" rx="10" fill="#ff4655" />
+              <circle cx="256" cy="296" r="50" fill="none" stroke="#ff4655" stroke-width="12" />
+              <path d="M 256 260 L 256 296 L 286 296" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+              <defs>
+                <linearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#ff4655" />
+                  <stop offset="100%" stop-color="#ff8533" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <h1>Coto Vencimientos</h1>
+            <p>Control de fechas de caducidad</p>
+          </div>
+        </div>
+        <button id="btn-notifications" class="btn-icon" title="Configurar Notificaciones">
+          <i class="fa-regular fa-bell"></i>
+          <span class="pulse-indicator hidden"></span>
+        </button>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="stats-grid">
+        <div class="stat-card total">
+          <div class="stat-icon"><i class="fa-solid fa-box-archive"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-total">0</span>
+            <span class="stat-label">Total Productos</span>
+          </div>
+        </div>
+        <div class="stat-card expired">
+          <div class="stat-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-expired">0</span>
+            <span class="stat-label">Vencidos</span>
+          </div>
+        </div>
+        <div class="stat-card expiring-today">
+          <div class="stat-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-today">0</span>
+            <span class="stat-label">Vencen Hoy</span>
+          </div>
+        </div>
+        <div class="stat-card warning">
+          <div class="stat-icon"><i class="fa-solid fa-clock"></i></div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-soon">0</span>
+            <span class="stat-label">Vencen Pronto</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <div class="controls-row">
+        <!-- Search bar -->
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
+          <input type="text" id="dashboard-search" placeholder="Buscar por título, PLU o EAN...">
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-tabs">
+          <button class="filter-tab active" data-filter="all">Todos</button>
+          <button class="filter-tab" data-filter="expired">Vencidos</button>
+          <button class="filter-tab" data-filter="today">Vencen Hoy</button>
+          <button class="filter-tab" data-filter="soon">Próximos (≤7 días)</button>
+          <button class="filter-tab" data-filter="safe">Vigentes</button>
+        </div>
+      </div>
+
+      <!-- Dashboard List -->
+      <section class="dashboard-list" id="expirations-list">
+        <!-- Loader / Skeleton -->
+        <div class="list-message" id="list-loading">
+          <div class="spinner"></div>
+          <p>Cargando lista de vencimientos...</p>
+        </div>
+
+        <!-- Empty state -->
+        <div class="list-message hidden" id="list-empty">
+          <div class="empty-icon"><i class="fa-regular fa-calendar-plus"></i></div>
+          <h3>Sin productos en seguimiento</h3>
+          <p>Toca el botón flotante <span class="plus-highlight">+</span> abajo a la derecha para agregar tu primer producto.</p>
+        </div>
+
+        <!-- Cards container -->
+        <div class="cards-grid hidden" id="cards-container"></div>
+      </section>
+    </main>
+
+    <!-- Floating Action Button -->
+    <button class="fab" id="fab-add" title="Agregar vencimiento">
+      <i class="fa-solid fa-plus"></i>
+    </button>
+  </div>
+
+  <!-- Modal Dialog (Add / Edit Expiration) -->
+  <div class="modal-overlay hidden" id="modal-add-edit">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-title">Agregar Vencimiento</h2>
+        <button class="modal-close" id="btn-modal-close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <form id="expiration-form">
+          <input type="hidden" id="form-id">
+
+          <!-- Product Search Section -->
+          <div class="form-group">
+            <label for="form-code">Código PLU o EAN</label>
+            <div class="input-action-group">
+              <input type="text" id="form-code" placeholder="Ej: 4011 o 779123456789" required autocomplete="off">
+              <button type="button" class="btn-secondary" id="btn-search-product">
+                <i class="fa-solid fa-magnifying-glass"></i> Buscar
+              </button>
+            </div>
+            <div class="search-status" id="search-status"></div>
+          </div>
+
+          <!-- Product Title (Filled automatically or manually) -->
+          <div class="form-group">
+            <label for="form-title">Título del Producto</label>
+            <input type="text" id="form-title" placeholder="Cargando al buscar o ingresa manualmente..." required>
+          </div>
+
+          <!-- Expiration Date -->
+          <div class="form-group">
+            <label for="form-expiry">Fecha de Vencimiento</label>
+            <input type="date" id="form-expiry" required>
+          </div>
+
+          <!-- Extra fallbacks (Manual EAN/PLU, etc.) - Collapsible -->
+          <div class="collapsible-section" id="manual-fallback-fields">
+            <div class="collapsible-header" id="btn-toggle-manual">
+              <span>Datos avanzados (Opcional)</span>
+              <i class="fa-solid fa-chevron-down"></i>
+            </div>
+            <div class="collapsible-content hidden" id="manual-content">
+              <div class="form-group">
+                <label for="form-plu">PLU (Manual)</label>
+                <input type="text" id="form-plu" placeholder="Código PLU local">
+              </div>
+              <div class="form-group">
+                <label for="form-ean">EAN (Manual)</label>
+                <input type="text" id="form-ean" placeholder="Código de barra largo">
+              </div>
+              <div class="form-group">
+                <label for="form-url">URL de Coto Digital</label>
+                <input type="url" id="form-url" placeholder="https://www.cotodigital.com.ar/...">
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn-text" id="btn-cancel">Cancelar</button>
+            <button type="submit" class="btn-primary" id="btn-submit">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
