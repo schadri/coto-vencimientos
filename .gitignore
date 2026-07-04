@@ -1,3 +1,5 @@
 node_modules/
 products_cache.json
 expirations.json
+subscriptions.json
+vapid_keys.json
