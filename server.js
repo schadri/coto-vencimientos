@@ -132,51 +132,21 @@ async function saveCachedProduct(plu, ean, cacheEntry) {
   }
 }
 
-// VAPID keys lazy initialization
-let vapidKeys = null;
-let vapidInitPromise = null;
+// Hardcoded stable VAPID keys for serverless compatibility
+const vapidKeys = {
+  publicKey: 'BJDD2husVmCHtp4SMfH4fcDUNy_k1S3yYIQZWUkj718kHXlQQ7bjzLDHNPNLHuj-hZRNNZIOv3eySRT8uxtN8iQ',
+  privateKey: 'eQxG_efdb82c3gGZuMDtK8vr17My7KfIoxgkmXCNEKk'
+};
 
-async function initVapid() {
-  if (isRedis) {
-    try {
-      const keys = await redis.get('coto_vapid_keys');
-      if (keys) {
-        vapidKeys = keys;
-      } else {
-        vapidKeys = webpush.generateVAPIDKeys();
-        await redis.set('coto_vapid_keys', vapidKeys);
-      }
-    } catch (err) {
-      console.error('Failed to retrieve VAPID keys from Redis, fallback to ephemeral:', err.message);
-      vapidKeys = webpush.generateVAPIDKeys();
-    }
-  } else {
-    const VAPID_FILE = path.join(__dirname, 'vapid_keys.json');
-    if (fs.existsSync(VAPID_FILE)) {
-      try {
-        vapidKeys = JSON.parse(fs.readFileSync(VAPID_FILE, 'utf8'));
-      } catch (e) {
-        vapidKeys = webpush.generateVAPIDKeys();
-        fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), 'utf8');
-      }
-    } else {
-      vapidKeys = webpush.generateVAPIDKeys();
-      fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), 'utf8');
-    }
-  }
+webpush.setVapidDetails(
+  'mailto:vencimientos-coto@example.com',
+  vapidKeys.publicKey,
+  vapidKeys.privateKey
+);
 
-  webpush.setVapidDetails(
-    'mailto:vencimientos-coto@example.com',
-    vapidKeys.publicKey,
-    vapidKeys.privateKey
-  );
-}
-
-function ensureVapid() {
-  if (!vapidInitPromise) {
-    vapidInitPromise = initVapid();
-  }
-  return vapidInitPromise;
+// No-op for serverless compatibility
+async function ensureVapid() {
+  return Promise.resolve();
 }
 
 // ----------------------------------------------------
